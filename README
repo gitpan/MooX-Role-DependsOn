@@ -1,0 +1,89 @@
+NAME
+    MooX::Role::DependsOn - Add a dependency tree to your cows
+
+SYNOPSIS
+      package Task;
+      use Moo;
+      with 'MooX::Role::DependsOn';
+
+      sub execute {
+        my ($self) = @_;
+        # ... do stuff ...
+      }
+
+      package main;
+      # Create some objects that consume MooX::Role::DependsOn:
+      my $job = {};
+      for my $jobname (qw/ A B C D E /) {
+        $job->{$jobname} = Task->new
+      }
+
+      # Add some dependencies:
+      # A depends on B, D:
+      $job->{A}->depends_on( $job->{B}, $job->{D} );
+      # B depends on C, E:
+      $job->{B}->depends_on( $job->{C}, $job->{E} );
+      # C depends on D, E:
+      $job->{C}->depends_on( $job->{D}, $job->{E} );
+
+      # Resolve dependencies (recursively) for an object:
+      my @ordered = $job->{A}->dependency_schedule;
+      # Scheduled as ( D, E, C, B, A ):
+      for my $obj (@ordered) {
+        $obj->execute;
+      }
+
+DESCRIPTION
+    A Moo::Role that adds a dependency graph builder to your class; objects
+    with this role applied can (recursively) depend on other objects with
+    this role applied to produce an ordered list of dependencies.
+
+    This is useful for applications such as job ordering (see the SYNOPSIS)
+    and resolving software dependencies.
+
+  Attributes
+   dependency_tag
+    An object's dependency_tag is used to perform the actual resolution; the
+    tag should be a stringifiable value that is unique within the tree.
+
+    Defaults to the stringified value of $self.
+
+  Methods
+   depends_on
+    If passed no arguments, returns the current direct dependencies of the
+    object as a list.
+
+    If passed objects that are MooX::Role::DependsOn consumers (or used as
+    an attribute during object construction), the objects are pushed to the
+    current dependency list.
+
+   clear_dependencies
+    Clears the current dependency list for this object.
+
+   has_dependencies
+    Returns boolean true if the object has dependencies.
+
+   dependency_schedule
+    This method recursively resolves dependencies and returns an ordered
+    'schedule' (as a list of objects). See the "SYNOPSIS" for an example.
+
+    An exception is thrown if circular dependencies are detected.
+
+    A callback can be passed in; for each successful resolution, the
+    callback will be invoked against the root object we started with and
+    passed in the resolved object, the sorted ARRAY of scheduled nodes thus
+    far, and an unsorted ARRAY of item "dependency_tag" values we are
+    currently in the process of resolving:
+
+      my @ordered = $startnode->dependency_schedule(
+        callback => sub {
+          my ($root, $node, $resolved, $queued_tags) = @_;
+          # ...
+        }
+      );
+
+AUTHOR
+    Jon Portnoy <avenj@cobaltirc.org>
+
+    Licensed under the same terms as Perl.
+

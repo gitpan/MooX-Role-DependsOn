@@ -1,0 +1,26 @@
+---
+abstract: 'Add a dependency tree to your cows'
+author:
+  - 'Jon Portnoy <avenj@cobaltirc.org>'
+build_requires:
+  Test::More: 0.88
+configure_requires:
+  ExtUtils::MakeMaker: 6.30
+dynamic_config: 0
+generated_by: 'Dist::Zilla version 5.006, CPAN::Meta::Converter version 2.120921'
+license: perl
+meta-spec:
+  url: http://module-build.sourceforge.net/META-spec-v1.4.html
+  version: 1.4
+name: MooX-Role-DependsOn
+requires:
+  List::Objects::Types: 0.006
+  List::Objects::WithUtils: 2
+  Moo: 1
+  MooX::late: 0.014
+  Scalar::Util: 0
+  Types::TypeTiny: 0
+  strictures: 1
+resources:
+  repository: git://github.com/avenj/moox-role-dependson.git
+version: 0.001001
