@@ -35,8 +35,8 @@ SYNOPSIS
 
 DESCRIPTION
     A Moo::Role that adds a dependency graph builder to your class; objects
-    with this role applied can (recursively) depend on other objects with
-    this role applied to produce an ordered list of dependencies.
+    with this role applied can (recursively) depend on other objects (that
+    also consume this role) to produce an ordered list of dependencies.
 
     This is useful for applications such as job ordering (see the SYNOPSIS)
     and resolving software dependencies.
@@ -67,20 +67,60 @@ DESCRIPTION
     This method recursively resolves dependencies and returns an ordered
     'schedule' (as a list of objects). See the "SYNOPSIS" for an example.
 
-    An exception is thrown if circular dependencies are detected.
-
+   Resolution callbacks
     A callback can be passed in; for each successful resolution, the
-    callback will be invoked against the root object we started with and
-    passed in the resolved object, the sorted ARRAY of scheduled nodes thus
-    far, and an unsorted ARRAY of item "dependency_tag" values we are
-    currently in the process of resolving:
+    callback will be invoked against the root object we started with:
 
       my @ordered = $startnode->dependency_schedule(
-        callback => sub {
-          my ($root, $node, $resolved, $queued_tags) = @_;
+        resolved_callback => sub {
+          my (undef, $state) = @_;
           # ...
-        }
+        },
       );
+
+    The $state object passed in is a simple struct-like object providing
+    access to the current resolution state. This consists of a set of lists
+    (represented as hashes for performance reasons).
+
+    (These are references to the actual in-use state; it's possible to do
+    scary things to the tree from here . . .)
+
+    The object provides the following accessors:
+
+    node
+        The node we are currently processing.
+
+    resolved_array
+        The ordered list of successfully resolved nodes, as an ARRAY of the
+        original objects.
+
+    unresolved_hash
+        The list of 'seen but not yet resolved' nodes, as a HASH keyed on
+        "dependency_tag".
+
+    skip_hash
+        The list of nodes to skip, as a HASH keyed on "dependency_tag".
+
+   Circular dependency callbacks
+    An exception is thrown if circular dependencies are detected; it's
+    possible to override that behavior by providing a circular_dep_callback
+    that is invoked against the root object:
+
+      my @ordered = $startnode->dependency_schedule(
+        circular_dep_callback => sub {
+          my (undef, $state) = @_;
+          # ...
+        },
+      );
+
+    If the callback returns true, resolution continues at the next node;
+    otherwise an exception is thrown after callback execution.
+
+    The $state object has the same accessors as resolution callbacks
+    (described above), plus the following:
+
+    edge
+        The dependency node we are attempting to examine.
 
 AUTHOR
     Jon Portnoy <avenj@cobaltirc.org>

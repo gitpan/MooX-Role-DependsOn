@@ -1,14 +1,12 @@
 package MooX::Role::DependsOn;
-{
-  $MooX::Role::DependsOn::VERSION = '0.001001';
-}
+$MooX::Role::DependsOn::VERSION = '0.002001';
 use strictures 1; no warnings 'recursion';
 
 
 use List::Objects::WithUtils 2;
 use List::Objects::Types -all;
 
-use Scalar::Util 'reftype';
+use Scalar::Util 'blessed', 'reftype';
 
 use Types::TypeTiny ();
 
@@ -65,6 +63,17 @@ sub __resolve_deps {
     my $depitem = $edge->dependency_tag;
     next DEP if exists $skip->{$depitem};
     if (exists $unresolved->{$depitem}) {
+      if (my $cb = $params->{circular_dep_callback}) {
+        # Pass full state for scary munging:
+        my $state = hash(
+          node            => $node,
+          edge            => $edge,
+          resolved_array  => $resolved,
+          unresolved_hash => $unresolved,
+          skip_hash       => $skip
+        )->inflate;
+        next DEP if $self->$cb( $state )
+      }
       die "Circular dependency detected: $item -> $depitem\n"
     }
     __resolve_deps( $self,
@@ -74,8 +83,9 @@ sub __resolve_deps {
         
         resolved   => $resolved,
         unresolved => $unresolved,
-        
-        callback => $params->{callback},
+
+        resolved_callback     => $params->{resolved_callback},
+        circular_dep_callback => $params->{circular_dep_callback},
       }
     )
   }
@@ -83,12 +93,14 @@ sub __resolve_deps {
   push @$resolved, $node;
   $skip->{$item} = delete $unresolved->{$item};
 
-  if (my $cb = $params->{callback}) {
-    $self->$cb(
-      $node,                  # Node we just scheduled
-      [ @$resolved ],         # Scheduled nodes 
-      [ keys %$unresolved ],  # Nodes in the process of being scheduled   
-    )
+  if (my $cb = $params->{resolved_callback}) {
+    my $state = hash(
+      node            => $node,
+      resolved_array  => $resolved,
+      unresolved_hash => $unresolved,
+      skip_hash       => $skip
+    )->inflate;
+    $self->$cb( $state );
   }
 
   ()
@@ -97,11 +109,20 @@ sub __resolve_deps {
 sub dependency_schedule {
   my ($self, %params) = @_;
 
+  confess 
+    "'callback' is deprecated, see the documentation for 'resolved_callback'"
+   if $params{callback};
+
   my $cb;
-  if ($cb = $params{callback}) {
-    confess "Expected 'callback' param to be a coderef"
-      unless ref $cb
-      and reftype $cb eq 'CODE';
+  if ($cb = $params{resolved_callback}) {
+    confess "Expected 'resolved_callback' param to be a coderef"
+      unless ref $cb and reftype $cb eq 'CODE';
+  }
+
+  my $circ_cb;
+  if ($circ_cb = $params{circular_dep_callback}) {
+    confess "Expected 'circular_dep_callback' param to be a coderef"
+      unless ref $circ_cb and reftype $circ_cb eq 'CODE';
   }
 
   my $resolved = [];
@@ -109,7 +130,8 @@ sub dependency_schedule {
     +{
       node     => $self,
       resolved => $resolved,
-      ( defined $cb   ? (callback => $cb)   : () ),
+      ( defined $cb ? (resolved_callback => $cb) : () ),
+      ( defined $circ_cb ? (circular_dep_callback => $circ_cb) : () ),
     },
   );
 
@@ -161,8 +183,8 @@ MooX::Role::DependsOn - Add a dependency tree to your cows
 =head1 DESCRIPTION
 
 A L<Moo::Role> that adds a dependency graph builder to your class; objects
-with this role applied can (recursively) depend on other objects with this role
-applied to produce an ordered list of dependencies.
+with this role applied can (recursively) depend on other objects (that also
+consume this role) to produce an ordered list of dependencies.
 
 This is useful for applications such as job ordering (see the SYNOPSIS) and resolving
 software dependencies.
@@ -200,19 +222,75 @@ Returns boolean true if the object has dependencies.
 This method recursively resolves dependencies and returns an ordered
 'schedule' (as a list of objects). See the L</SYNOPSIS> for an example.
 
-An exception is thrown if circular dependencies are detected.
+=head4 Resolution callbacks
 
 A callback can be passed in; for each successful resolution, the callback will
-be invoked against the root object we started with and passed in the resolved
-object, the sorted ARRAY of scheduled nodes thus far, and an unsorted ARRAY of
-item L</dependency_tag> values we are currently in the process of resolving:
+be invoked against the root object we started with:
 
   my @ordered = $startnode->dependency_schedule(
-    callback => sub {
-      my ($root, $node, $resolved, $queued_tags) = @_;
+    resolved_callback => sub {
+      my (undef, $state) = @_;
       # ...
-    }
+    },
   );
+
+The C<$state> object passed in is a simple struct-like object providing access
+to the current resolution state. This consists of a set of lists (represented
+as hashes for performance reasons).
+
+(These are references to the actual in-use state; it's possible to do scary
+things to the tree from here . . .)
+
+The object provides the following accessors:
+
+=over
+
+=item node
+
+The node we are currently processing.
+
+=item resolved_array
+
+The ordered list of successfully resolved nodes, as an ARRAY of the original
+objects.
+
+=item unresolved_hash
+
+The list of 'seen but not yet resolved' nodes, as a HASH keyed on
+L</dependency_tag>.
+
+=item skip_hash
+
+The list of nodes to skip, as a HASH keyed on L</dependency_tag>.
+
+=back
+
+=head4 Circular dependency callbacks
+
+An exception is thrown if circular dependencies are detected; it's possible to
+override that behavior by providing a B<circular_dep_callback> that is invoked
+against the root object:
+
+  my @ordered = $startnode->dependency_schedule(
+    circular_dep_callback => sub {
+      my (undef, $state) = @_;
+      # ...
+    },
+  );
+
+If the callback returns true, resolution continues at the next node; otherwise
+an exception is thrown after callback execution.
+
+The C<$state> object has the same accessors as resolution callbacks (described
+above), plus the following:
+
+=over
+
+=item edge
+
+The dependency node we are attempting to examine.
+
+=back
 
 =head1 AUTHOR
 

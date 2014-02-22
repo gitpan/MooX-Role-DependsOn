@@ -1,5 +1,12 @@
 Revision history for Perl module MooX-Role-DependsOn
 
+0.002001 2014-02-21
+
+  - Add circular dependency callbacks
+
+  - Deprecate 'callback' in favor of resolution_callback, which is passed
+    references to the actual in-use state for scary munging purposes
+
 0.001001 2013-12-05
 
-   - Initial release.
+  - Initial release.
